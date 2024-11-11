@@ -1,0 +1,179 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { useTheme } from "next-themes"
+import { Moon, Sun } from "lucide-react"
+
+// Helper function to convert ArrayBuffer to Base64 string
+function arrayBufferToBase64(buffer: ArrayBuffer) {
+  return btoa(String.fromCharCode(...new Uint8Array(buffer)))
+}
+
+// Helper function to convert Base64 string to ArrayBuffer
+function base64ToArrayBuffer(base64: string) {
+  const binaryString = atob(base64)
+  const bytes = new Uint8Array(binaryString.length)
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i)
+  }
+  return bytes.buffer
+}
+
+function ThemeToggle() {
+  const { theme, setTheme } = useTheme()
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+      className="absolute top-4 right-4"
+    >
+      <Sun className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+      <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+      <span className="sr-only">Toggle theme</span>
+    </Button>
+  )
+}
+
+export default function DigitalSignatureApp() {
+  const [keyPair, setKeyPair] = useState<CryptoKeyPair | null>(null)
+  const [document, setDocument] = useState('')
+  const [signature, setSignature] = useState('')
+  const [verificationResult, setVerificationResult] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    generateKeyPair()
+  }, [])
+
+  async function generateKeyPair() {
+    const newKeyPair = await window.crypto.subtle.generateKey(
+      {
+        name: "ECDSA",
+        namedCurve: "P-256"
+      },
+      true,
+      ["sign", "verify"]
+    )
+    setKeyPair(newKeyPair)
+  }
+
+  async function signDocument() {
+    if (!keyPair) return
+
+    const encoder = new TextEncoder()
+    const data = encoder.encode(document)
+
+    const signature = await window.crypto.subtle.sign(
+      {
+        name: "ECDSA",
+        hash: {name: "SHA-256"},
+      },
+      keyPair.privateKey,
+      data
+    )
+
+    setSignature(arrayBufferToBase64(signature))
+    setVerificationResult(null)
+  }
+
+  async function verifySignature() {
+    if (!keyPair) return
+
+    const encoder = new TextEncoder()
+    const data = encoder.encode(document)
+    const signatureBuffer = base64ToArrayBuffer(signature)
+
+    const isValid = await window.crypto.subtle.verify(
+      {
+        name: "ECDSA",
+        hash: {name: "SHA-256"},
+      },
+      keyPair.publicKey,
+      signatureBuffer,
+      data
+    )
+
+    setVerificationResult(isValid)
+  }
+
+  return (
+    <div className="container mx-auto p-4 relative">
+      <ThemeToggle />
+      <h1 className="text-2xl font-bold mb-4">Digital Signature App</h1>
+      
+      <Card className="mb-4">
+        <CardHeader>
+          <CardTitle>Sign Document</CardTitle>
+          <CardDescription>Enter the document content and sign it</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="mb-4">
+            <Label htmlFor="document">Document Content</Label>
+            <Input
+              id="document"
+              value={document}
+              onChange={(e) => setDocument(e.target.value)}
+              placeholder="Enter document content"
+            />
+          </div>
+        </CardContent>
+        <CardFooter>
+          <Button onClick={signDocument} disabled={!document}>Sign Document</Button>
+        </CardFooter>
+      </Card>
+
+      {signature && (
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle>Signature</CardTitle>
+            <CardDescription>The digital signature for the document</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="break-all">{signature}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card className="mb-4">
+        <CardHeader>
+          <CardTitle>Verify Signature</CardTitle>
+          <CardDescription>Verify the signature of the document</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="mb-4">
+            <Label htmlFor="verify-signature">Signature</Label>
+            <Input
+              id="verify-signature"
+              value={signature}
+              onChange={(e) => setSignature(e.target.value)}
+              placeholder="Enter signature to verify"
+            />
+          </div>
+        </CardContent>
+        <CardFooter>
+          <Button onClick={verifySignature} disabled={!document || !signature}>Verify Signature</Button>
+        </CardFooter>
+      </Card>
+
+      {verificationResult !== null && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Verification Result</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {verificationResult ? (
+              <p className="text-green-600">Signature is valid. The document is authentic and has not been tampered with.</p>
+            ) : (
+              <p className="text-red-600">Signature is invalid. The document may have been tampered with or the signature is incorrect.</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  )
+}
